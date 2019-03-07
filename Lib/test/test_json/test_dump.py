@@ -3,7 +3,6 @@ from test.test_json import PyTest, CTest
 
 from test.support import bigmemtest, _1G
 
-
 class TestDump:
     def test_dump(self):
         sio = StringIO()
@@ -57,6 +56,7 @@ class TestDump:
         d = D()
         d[1337] = "true.dat"
         self.assertEqual(self.dumps(d, sort_keys=True), '{"1337": "true.dat"}')
+
 
 class TestPyDump(TestDump, PyTest): pass
 
