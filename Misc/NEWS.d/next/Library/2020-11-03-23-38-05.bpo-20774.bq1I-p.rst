@@ -1,0 +1,3 @@
+Added support for encoding :class:`deque` objects to JSON arrays in the
+:mod:`json` module (Contributed by Lisa Roach and Ken Jin in
+:issue:`20774`).
