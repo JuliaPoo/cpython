@@ -585,7 +585,11 @@ _Py_bytes_find(const char *str, Py_ssize_t len, PyObject *args)
 PyDoc_STRVAR_shared(_Py_index__doc__,
 "B.index(sub[, start[, end]]) -> int\n\
 \n\
-Like B.find() but raise ValueError when the subsection is not found.");
+Return the lowest index in B where subsection sub is found,\n\
+such that sub is contained within B[start,end].  Optional\n\
+arguments start and end are interpreted as in slice notation.\n\
+\n\
+Raises ValueError when the subsection is not found.");
 
 PyObject *
 _Py_bytes_index(const char *str, Py_ssize_t len, PyObject *args)
@@ -622,7 +626,11 @@ _Py_bytes_rfind(const char *str, Py_ssize_t len, PyObject *args)
 PyDoc_STRVAR_shared(_Py_rindex__doc__,
 "B.rindex(sub[, start[, end]]) -> int\n\
 \n\
-Like B.rfind() but raise ValueError when the subsection is not found.");
+Return the highest index in B where subsection sub is found,\n\
+such that sub is contained within B[start,end].  Optional\n\
+arguments start and end are interpreted as in slice notation.\n\
+\n\
+Raise ValueError when the subsection is not found.");
 
 PyObject *
 _Py_bytes_rindex(const char *str, Py_ssize_t len, PyObject *args)
