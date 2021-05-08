@@ -4327,10 +4327,10 @@ validate_keywords(struct compiler *c, asdl_keyword_seq *keywords)
 static int
 compiler_call(struct compiler *c, expr_ty e)
 {
-    int ret = maybe_optimize_method_call(c, e);
-    if (ret >= 0) {
-        return ret;
-    }
+    // int ret = maybe_optimize_method_call(c, e);
+    // if (ret >= 0) {
+    //     return ret;
+    // }
     if (!check_caller(c, e->v.Call.func)) {
         return 0;
     }
