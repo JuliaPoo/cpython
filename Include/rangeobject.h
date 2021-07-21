@@ -21,6 +21,24 @@ PyAPI_DATA(PyTypeObject) PyLongRangeIter_Type;
 
 #define PyRange_Check(op) Py_IS_TYPE(op, &PyRange_Type)
 
+typedef struct {
+        PyObject_HEAD
+        long    index;
+        long    start;
+        long    step;
+        long    len;
+} rangeiterobject;
+
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *index;
+    PyObject *start;
+    PyObject *step;
+    PyObject *len;
+} longrangeiterobject;
+
+
 #ifdef __cplusplus
 }
 #endif

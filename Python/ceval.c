@@ -24,6 +24,7 @@
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_sysmodule.h"     // _PySys_Audit()
 #include "pycore_tuple.h"         // _PyTuple_ITEMS()
+#include "pycore_interp.h"        // _PY_NSMALLNEGINTS, _PY_NSMALLPOSINTS
 
 #include "code.h"
 #include "pycore_dict.h"
@@ -3904,6 +3905,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
 
         case TARGET(FOR_ITER): {
             PREDICTED(FOR_ITER);
+            STAT_INC(FOR_ITER, unquickened);
             /* before: [iter]; after: [iter, iter()] *or* [] */
             PyObject *iter = TOP();
             PyObject *next = (*Py_TYPE(iter)->tp_iternext)(iter);
@@ -3926,6 +3928,83 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
             STACK_SHRINK(1);
             Py_DECREF(iter);
             JUMPBY(oparg);
+            DISPATCH();
+        }
+
+        case TARGET(FOR_ITER_ADAPTIVE): {
+            assert(cframe.use_tracing == 0);
+            SpecializedCacheEntry *cache = GET_CACHE();
+            if (cache->adaptive.counter == 0) {
+                next_instr--;
+                if (_Py_Specialize_ForIter(next_instr, TOP(), cache, co) < 0) {
+                    goto error;
+                }
+                DISPATCH();
+            }
+            else {
+                STAT_INC(FOR_ITER, deferred);
+                cache->adaptive.counter--;
+                oparg = cache->adaptive.original_oparg;
+                JUMP_TO_INSTRUCTION(FOR_ITER);
+            }
+        }
+        
+        case TARGET(FOR_ITER_RANGE_LONG): {
+            assert(cframe.use_tracing == 0);
+            SpecializedCacheEntry *caches = GET_CACHE();
+            _PyAdaptiveEntry *cache0 = &caches[0].adaptive;
+            _PyForIterCache *cache1 = &caches[-1].for_iter;
+            assert(cache0->original_oparg > 0);
+            assert(cache1->cached_long != NULL);
+            DEOPT_IF(!Py_IS_TYPE(TOP(), &PyRangeIter_Type), FOR_ITER);
+
+            PyObject *next = NULL;
+            rangeiterobject *r = (rangeiterobject *)(TOP());
+            if (r->index < r->len) {
+                long cur_val = (long)(r->start +
+                    (unsigned long)(r->index++) * r->step);
+                /* Small ints have to be treated differently since
+                   some comparisons use pointers. */
+                if (-_PY_NSMALLNEGINTS <= cur_val && cur_val < _PY_NSMALLPOSINTS) {
+                    next = Py_NewRef(__PyLong_GetSmallInt_internal((sdigit)cur_val));
+                }
+                else {
+                    /* If the cached long is only used by us, then
+                       it's fine to re-use the long in-place. */
+                    if (Py_REFCNT(cache1->cached_long) == 1) {
+                        PyLongObject *l = (PyLongObject *)(cache1->cached_long);
+                        if (cur_val < 0) {
+                            l->ob_digit[0] = -cur_val;
+                            /* PyLong usese ob_size[0] to indicate sign. */
+                            Py_SET_SIZE(l, -1);
+                        }
+                        else {
+                            l->ob_digit[0] = cur_val;
+                            Py_SET_SIZE(l, 1);
+                        }
+                        next = Py_NewRef(l);
+                    }
+                    /* Else allocate a new PyLong */
+                    else {
+                        next = PyLong_FromLong(cur_val);
+                        if (next == NULL) {
+                            goto error;
+                        }
+                    }
+                }
+                record_cache_hit(cache0);
+                STAT_INC(FOR_ITER, hit);
+                PUSH(next);
+                PREDICT(STORE_FAST);
+                PREDICT(UNPACK_SEQUENCE);
+                DISPATCH();
+            }
+            /* iterator ended normally */
+            record_cache_hit(cache0);
+            STAT_INC(FOR_ITER, hit);
+            STACK_SHRINK(1);
+            Py_DECREF(r);
+            JUMPBY(cache0->original_oparg);
             DISPATCH();
         }
 
@@ -4424,6 +4503,23 @@ opname ## _miss: \
         JUMP_TO_INSTRUCTION(opname); \
     }
 
+#define MISS_WITH_CACHE_CLEANUP(opname) \
+opname ## _miss: \
+    { \
+        STAT_INC(opname, miss); \
+        _PyAdaptiveEntry *cache = &GET_CACHE()->adaptive; \
+        record_cache_miss(cache); \
+        if (too_many_cache_misses(cache)) { \
+            next_instr[-1] = _Py_MAKECODEUNIT(opname ## _ADAPTIVE, _Py_OPARG(next_instr[-1])); \
+            STAT_INC(opname, deopt); \
+            cache_backoff(cache); \
+            goto opname ## _deopt_cleanup; \
+        } \
+opname ## _deopt_cleanup_end: \
+        oparg = cache->original_oparg; \
+        JUMP_TO_INSTRUCTION(opname); \
+    }
+
 MISS_WITH_CACHE(LOAD_ATTR)
 MISS_WITH_CACHE(LOAD_GLOBAL)
 MISS_WITH_OPARG_COUNTER(BINARY_SUBSCR)
@@ -4436,6 +4532,16 @@ binary_subscr_dict_error:
             }
             Py_DECREF(sub);
             goto error;
+        }
+
+MISS_WITH_CACHE_CLEANUP(FOR_ITER)
+FOR_ITER_deopt_cleanup:
+        {
+            _PyForIterCache *cache1 = &GET_CACHE()[-1].for_iter;
+            assert(cache1->cached_long != NULL);
+            printf("DEOPT\n");
+            Py_XDECREF(cache1->cached_long);
+            goto FOR_ITER_deopt_cleanup_end;
         }
 
 error:

@@ -233,4 +233,6 @@ _specialized_instructions = [
     "LOAD_GLOBAL_ADAPTIVE",
     "LOAD_GLOBAL_MODULE",
     "LOAD_GLOBAL_BUILTIN",
+    "FOR_ITER_ADAPTIVE",
+    "FOR_ITER_RANGE_LONG",
 ]

@@ -6,6 +6,7 @@
 #include "pycore_moduleobject.h"
 #include "opcode.h"
 #include "structmember.h"         // struct PyMemberDef, T_OFFSET_EX
+#include "rangeobject.h"
 
 /* For guidance on adding or extending families of instructions see
  * ./adaptive.md
@@ -79,6 +80,7 @@ _Py_PrintSpecializationStats(void)
     print_stats(&_specialization_stats[LOAD_ATTR], "load_attr");
     print_stats(&_specialization_stats[LOAD_GLOBAL], "load_global");
     print_stats(&_specialization_stats[BINARY_SUBSCR], "binary_subscr");
+    print_stats(&_specialization_stats[FOR_ITER], "for_iter");
 }
 
 #if SPECIALIZATION_STATS_DETAILED
@@ -164,6 +166,7 @@ static uint8_t adaptive_opcodes[256] = {
     [LOAD_ATTR] = LOAD_ATTR_ADAPTIVE,
     [LOAD_GLOBAL] = LOAD_GLOBAL_ADAPTIVE,
     [BINARY_SUBSCR] = BINARY_SUBSCR_ADAPTIVE,
+    [FOR_ITER] = FOR_ITER_ADAPTIVE,
 };
 
 /* The number of cache entries required for a "family" of instructions. */
@@ -171,6 +174,7 @@ static uint8_t cache_requirements[256] = {
     [LOAD_ATTR] = 2, /* _PyAdaptiveEntry and _PyLoadAttrCache */
     [LOAD_GLOBAL] = 2, /* _PyAdaptiveEntry and _PyLoadGlobalCache */
     [BINARY_SUBSCR] = 0,
+    [FOR_ITER] = 2, /* _PyAdaptiveEntry, and _PyForIterCache */
 };
 
 /* Return the oparg for the cache_offset and instruction index.
@@ -683,3 +687,74 @@ success:
     return 0;
 }
 
+int
+_Py_Specialize_ForIter(
+    _Py_CODEUNIT *instr, PyObject *iter,
+    SpecializedCacheEntry *cache, PyCodeObject *co)
+{
+    _PyAdaptiveEntry *cache0 = &cache->adaptive;
+    /* Holds a strong reference to the PyLong.
+       This may leak when code object is freed. */
+    _PyForIterCache *cache1 = &cache[-1].for_iter;
+
+    PyTypeObject *type = Py_TYPE(iter);
+    cache1->cached_long = NULL;
+    if (co->co_flags & CO_GENERATOR || co->co_flags & CO_COROUTINE || co->co_flags & CO_ASYNC_GENERATOR) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "generator/coroutine/async gen");
+        goto fail;
+    }
+    if (Py_REFCNT(iter) > 3) {
+        /* Iterators with refcount > 3 may be modified by other code. */
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "refcount unsafe to optimize");
+        goto fail;
+    }
+
+    /* Fits in a machine long. */
+    if (Py_IS_TYPE(iter, &PyRangeIter_Type)) {
+        rangeiterobject *rangeit = (rangeiterobject *)iter;
+        cache1->cached_long = (PyLongObject *)PyLong_FromLong(LONG_MAX);
+        if (cache1->cached_long == NULL) {
+            return -1;
+        }
+        *instr = _Py_MAKECODEUNIT(FOR_ITER_RANGE_LONG, _Py_OPARG(*instr));
+        goto success;
+    }
+
+#if SPECIALIZATION_STATS
+    /* Needs a PyLong. */
+    else if (Py_IS_TYPE(iter, &PyLongRangeIter_Type)) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "PyLong range object");
+        goto fail;
+        *instr = _Py_MAKECODEUNIT(FOR_ITER_RANGE_PYLONG, _Py_OPARG(*instr));
+        goto success;
+    }
+
+    else if (Py_IS_TYPE(iter, &PyEnum_Type)) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "enumerate() object");
+        goto fail;
+    }
+    else if (Py_IS_TYPE(iter, &PyListIter_Type)) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "list iterator");
+        goto fail;
+    }
+    else if (Py_IS_TYPE(iter, &PyTupleIter_Type)) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "tuple iterator");
+        goto fail;
+    }
+    else if (Py_IS_TYPE(iter, &PyUnicodeIter_Type)) {
+        SPECIALIZATION_FAIL(FOR_ITER, type, iter, "str iterator");
+        goto fail;
+    }
+#endif
+    SPECIALIZATION_FAIL(FOR_ITER, type, iter, "unknown iterator object");
+fail:
+    STAT_INC(FOR_ITER, specialization_failure);
+    assert(!PyErr_Occurred());
+    cache_backoff(cache0);
+    return 0;
+success:
+    STAT_INC(FOR_ITER, specialization_success);
+    assert(!PyErr_Occurred());
+    cache0->counter = saturating_start();
+    return 0;
+}

@@ -764,14 +764,6 @@ PyTypeObject PyRange_Type = {
    in the normal case, but possible for any numeric value.
 */
 
-typedef struct {
-        PyObject_HEAD
-        long    index;
-        long    start;
-        long    step;
-        long    len;
-} rangeiterobject;
-
 static PyObject *
 rangeiter_next(rangeiterobject *r)
 {
@@ -935,13 +927,6 @@ fast_range_iter(long start, long stop, long step)
     return (PyObject *)it;
 }
 
-typedef struct {
-    PyObject_HEAD
-    PyObject *index;
-    PyObject *start;
-    PyObject *step;
-    PyObject *len;
-} longrangeiterobject;
 
 static PyObject *
 longrangeiter_len(longrangeiterobject *r, PyObject *no_args)
