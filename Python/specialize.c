@@ -274,30 +274,9 @@ optimize(SpecializedCacheOrInstruction *quickened, int len)
             /* Super instructions don't use the cache,
              * so no need to update the offset. */
             switch (opcode) {
-                case JUMP_ABSOLUTE:
-                    instructions[i] = _Py_MAKECODEUNIT(JUMP_ABSOLUTE_QUICK, oparg);
-                    break;
-                case LOAD_FAST:
-                    switch(previous_opcode) {
-                        case LOAD_FAST:
-                            instructions[i-1] = _Py_MAKECODEUNIT(LOAD_FAST__LOAD_FAST, previous_oparg);
-                            break;
-                        case STORE_FAST:
-                            instructions[i-1] = _Py_MAKECODEUNIT(STORE_FAST__LOAD_FAST, previous_oparg);
-                            break;
-                        case LOAD_CONST:
-                            instructions[i-1] = _Py_MAKECODEUNIT(LOAD_CONST__LOAD_FAST, previous_oparg);
-                            break;
-                    }
-                    break;
                 case STORE_FAST:
-                    if (previous_opcode == STORE_FAST) {
-                        instructions[i-1] = _Py_MAKECODEUNIT(STORE_FAST__STORE_FAST, previous_oparg);
-                    }
-                    break;
-                case LOAD_CONST:
-                    if (previous_opcode == LOAD_FAST) {
-                        instructions[i-1] = _Py_MAKECODEUNIT(LOAD_FAST__LOAD_CONST, previous_oparg);
+                    if (previous_opcode == FOR_ITER) {
+                        instructions[i-1] = _Py_MAKECODEUNIT(FOR_ITER__STORE_FAST, previous_oparg);
                     }
                     break;
             }

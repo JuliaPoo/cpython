@@ -1683,73 +1683,6 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
             DISPATCH();
         }
 
-        case TARGET(LOAD_FAST__LOAD_FAST): {
-            PyObject *value = GETLOCAL(oparg);
-            if (value == NULL) {
-                goto unbound_local_error;
-            }
-            NEXTOPARG();
-            Py_INCREF(value);
-            PUSH(value);
-            value = GETLOCAL(oparg);
-            if (value == NULL) {
-                goto unbound_local_error;
-            }
-            Py_INCREF(value);
-            PUSH(value);
-            NOTRACE_DISPATCH();
-        }
-
-        case TARGET(LOAD_FAST__LOAD_CONST): {
-            PyObject *value = GETLOCAL(oparg);
-            if (value == NULL) {
-                goto unbound_local_error;
-            }
-            NEXTOPARG();
-            Py_INCREF(value);
-            PUSH(value);
-            value = GETITEM(consts, oparg);
-            Py_INCREF(value);
-            PUSH(value);
-            NOTRACE_DISPATCH();
-        }
-
-        case TARGET(STORE_FAST__LOAD_FAST): {
-            PyObject *value = POP();
-            SETLOCAL(oparg, value);
-            NEXTOPARG();
-            value = GETLOCAL(oparg);
-            if (value == NULL) {
-                goto unbound_local_error;
-            }
-            Py_INCREF(value);
-            PUSH(value);
-            NOTRACE_DISPATCH();
-        }
-
-        case TARGET(STORE_FAST__STORE_FAST): {
-            PyObject *value = POP();
-            SETLOCAL(oparg, value);
-            NEXTOPARG();
-            value = POP();
-            SETLOCAL(oparg, value);
-            NOTRACE_DISPATCH();
-        }
-
-        case TARGET(LOAD_CONST__LOAD_FAST): {
-            PyObject *value = GETITEM(consts, oparg);
-            NEXTOPARG();
-            Py_INCREF(value);
-            PUSH(value);
-            value = GETLOCAL(oparg);
-            if (value == NULL) {
-                goto unbound_local_error;
-            }
-            Py_INCREF(value);
-            PUSH(value);
-            NOTRACE_DISPATCH();
-        }
-
         case TARGET(POP_TOP): {
             PyObject *value = POP();
             Py_DECREF(value);
@@ -3995,6 +3928,31 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
             Py_DECREF(iter);
             JUMPBY(oparg);
             DISPATCH();
+        }
+
+        case TARGET(FOR_ITER__STORE_FAST): {
+            /* before: [iter]; after: [iter] *or* [] */
+            PyObject *iter = TOP();
+            PyObject *next = (*Py_TYPE(iter)->tp_iternext)(iter);
+            if (next != NULL) {
+                NEXTOPARG();
+                SETLOCAL(oparg, next);
+                NOTRACE_DISPATCH();
+            }
+            if (_PyErr_Occurred(tstate)) {
+                if (!_PyErr_ExceptionMatches(tstate, PyExc_StopIteration)) {
+                    goto error;
+                }
+                else if (tstate->c_tracefunc != NULL) {
+                    call_exc_trace(tstate->c_tracefunc, tstate->c_traceobj, tstate, f);
+                }
+                _PyErr_Clear(tstate);
+            }
+            /* iterator ended normally */
+            STACK_SHRINK(1);
+            Py_DECREF(iter);
+            JUMPBY(oparg);
+            NOTRACE_DISPATCH();
         }
 
         case TARGET(BEFORE_ASYNC_WITH): {
