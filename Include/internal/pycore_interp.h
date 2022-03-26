@@ -48,11 +48,9 @@ struct _ceval_state {
     /* This single variable consolidates all requests to break out of
        the fast path in the eval loop. */
     _Py_atomic_int eval_breaker;
-    /* Request for dropping the GIL */
-    _Py_atomic_int gil_drop_request;
     struct _pending_calls pending;
 #ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
-    struct _gil_runtime_state gil;
+    int threads_init;
 #endif
 };
 

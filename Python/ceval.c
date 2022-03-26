@@ -126,21 +126,18 @@ is_tstate_valid(PyThreadState *tstate)
 /* This can set eval_breaker to 0 even though gil_drop_request became
    1.  We believe this is all right because the eval loop will release
    the GIL eventually anyway. */
-static inline void
-COMPUTE_EVAL_BREAKER(PyInterpreterState *interp,
-                     struct _ceval_runtime_state *ceval,
-                     struct _ceval_state *ceval2)
-{
-    _Py_atomic_store_relaxed(&ceval2->eval_breaker,
-        _Py_atomic_load_relaxed(&ceval2->gil_drop_request)
-        | (_Py_atomic_load_relaxed(&ceval->signals_pending)
-           && _Py_ThreadCanHandleSignals(interp))
-        | (_Py_atomic_load_relaxed(&ceval2->pending.calls_to_do)
-           && _Py_ThreadCanHandlePendingCalls())
-        | ceval2->pending.async_exc);
-}
+#define COMPUTE_EVAL_BREAKER(interp, ceval, ceval2) \
+    _Py_atomic_store_relaxed(&ceval2->eval_breaker, \
+        bfs_preempt | bfs_check_depleted \
+        | (_Py_atomic_load_relaxed(&ceval->signals_pending) \
+           && _Py_ThreadCanHandleSignals(interp)) \
+        | (_Py_atomic_load_relaxed(&ceval2->pending.calls_to_do) \
+           && _Py_ThreadCanHandlePendingCalls()) \
+        | ceval2->pending.async_exc); \
 
+#include "bfs.c"
 
+#if 0
 static inline void
 SET_GIL_DROP_REQUEST(PyInterpreterState *interp)
 {
@@ -158,7 +155,7 @@ RESET_GIL_DROP_REQUEST(PyInterpreterState *interp)
     _Py_atomic_store_relaxed(&ceval2->gil_drop_request, 0);
     COMPUTE_EVAL_BREAKER(interp, ceval, ceval2);
 }
-
+#endif
 
 static inline void
 SIGNAL_PENDING_CALLS(PyInterpreterState *interp)
@@ -228,7 +225,7 @@ UNSIGNAL_ASYNC_EXC(PyInterpreterState *interp)
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
 #endif
-#include "ceval_gil.h"
+
 
 void _Py_NO_RETURN
 _Py_FatalError_TstateNULL(const char *func)
@@ -257,7 +254,8 @@ PyEval_ThreadsInitialized(void)
 int
 _PyEval_ThreadsInitialized(_PyRuntimeState *runtime)
 {
-    return gil_created(&runtime->ceval.gil);
+    // return gil_created(&runtime->ceval.gil);
+    return runtime->ceval.threads_init == 1;
 }
 
 int
@@ -267,6 +265,8 @@ PyEval_ThreadsInitialized(void)
     return _PyEval_ThreadsInitialized(runtime);
 }
 #endif
+
+#if 0
 
 PyStatus
 _PyEval_InitGIL(PyThreadState *tstate)
@@ -322,6 +322,7 @@ _PyEval_FiniGIL(PyInterpreterState *interp)
     destroy_gil(gil);
     assert(!gil_created(gil));
 }
+#endif
 
 void
 PyEval_InitThreads(void)
@@ -344,7 +345,8 @@ PyEval_AcquireLock(void)
     PyThreadState *tstate = _PyRuntimeState_GetThreadState(runtime);
     _Py_EnsureTstateNotNULL(tstate);
 
-    take_gil(tstate);
+    //take_gil(tstate);
+    bfs_schedule(tstate);
 }
 
 void
@@ -357,7 +359,7 @@ PyEval_ReleaseLock(void)
        in debug mode. */
     struct _ceval_runtime_state *ceval = &runtime->ceval;
     struct _ceval_state *ceval2 = &tstate->interp->ceval;
-    drop_gil(ceval, ceval2, tstate);
+    //drop_gil(ceval, ceval2, tstate);
 }
 
 void
@@ -365,7 +367,8 @@ _PyEval_ReleaseLock(PyThreadState *tstate)
 {
     struct _ceval_runtime_state *ceval = &tstate->interp->runtime->ceval;
     struct _ceval_state *ceval2 = &tstate->interp->ceval;
-    drop_gil(ceval, ceval2, tstate);
+    //drop_gil(ceval, ceval2, tstate);
+    bfs_yield(tstate);
 }
 
 void
@@ -373,7 +376,8 @@ PyEval_AcquireThread(PyThreadState *tstate)
 {
     _Py_EnsureTstateNotNULL(tstate);
 
-    take_gil(tstate);
+    // take_gil(tstate);
+    bfs_schedule(tstate);
 
     struct _gilstate_runtime_state *gilstate = &tstate->interp->runtime->gilstate;
 #ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
@@ -397,7 +401,8 @@ PyEval_ReleaseThread(PyThreadState *tstate)
     }
     struct _ceval_runtime_state *ceval = &runtime->ceval;
     struct _ceval_state *ceval2 = &tstate->interp->ceval;
-    drop_gil(ceval, ceval2, tstate);
+    // drop_gil(ceval, ceval2, tstate);
+    bfs_yield(NULL);
 }
 
 #ifdef HAVE_FORK
@@ -455,12 +460,13 @@ PyEval_SaveThread(void)
 
     struct _ceval_runtime_state *ceval = &runtime->ceval;
     struct _ceval_state *ceval2 = &tstate->interp->ceval;
-#ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
-    assert(gil_created(&ceval2->gil));
-#else
-    assert(gil_created(&ceval->gil));
-#endif
-    drop_gil(ceval, ceval2, tstate);
+//#ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
+//    assert(gil_created(&ceval2->gil));
+//#else
+//    assert(gil_created(&ceval->gil));
+//#endif
+    bfs_yield(tstate);
+    // drop_gil(ceval, ceval2, tstate);
     return tstate;
 }
 
@@ -469,7 +475,8 @@ PyEval_RestoreThread(PyThreadState *tstate)
 {
     _Py_EnsureTstateNotNULL(tstate);
 
-    take_gil(tstate);
+    // take_gil(tstate);
+    bfs_schedule(tstate);
 
     struct _gilstate_runtime_state *gilstate = &tstate->interp->runtime->gilstate;
     _PyThreadState_Swap(gilstate, tstate);
@@ -723,9 +730,9 @@ Py_MakePendingCalls(void)
 void
 _PyEval_InitRuntimeState(struct _ceval_runtime_state *ceval)
 {
-#ifndef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
-    _gil_initialize(&ceval->gil);
-#endif
+//#ifndef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
+//    _gil_initialize(&ceval->gil);
+//#endif
 }
 
 void
@@ -736,9 +743,9 @@ _PyEval_InitState(struct _ceval_state *ceval, PyThread_type_lock pending_lock)
 
     pending->lock = pending_lock;
 
-#ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
-    _gil_initialize(&ceval->gil);
-#endif
+//#ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
+//    _gil_initialize(&ceval->gil);
+//#endif
 }
 
 void
@@ -1141,17 +1148,18 @@ eval_frame_handle_pending(PyThreadState *tstate)
         }
     }
 
-    /* GIL drop request */
-    if (_Py_atomic_load_relaxed(&ceval2->gil_drop_request)) {
+    ///* GIL drop request */
+    //if (_Py_atomic_load_relaxed(&ceval2->gil_drop_request)) {
         /* Give another thread a chance */
         if (_PyThreadState_Swap(&runtime->gilstate, NULL) != tstate) {
             Py_FatalError("tstate mix-up");
         }
-        drop_gil(ceval, ceval2, tstate);
+        //drop_gil(ceval, ceval2, tstate);
 
-        /* Other threads may run now */
+        ///* Other threads may run now */
 
-        take_gil(tstate);
+        //take_gil(tstate);
+        bfs_checkpoint(tstate);
 
 #ifdef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
         (void)_PyThreadState_Swap(&runtime->gilstate, tstate);
@@ -1160,7 +1168,7 @@ eval_frame_handle_pending(PyThreadState *tstate)
             Py_FatalError("orphan tstate");
         }
 #endif
-    }
+    //}
 
     /* Check for asynchronous exception. */
     if (tstate->async_exc != NULL) {

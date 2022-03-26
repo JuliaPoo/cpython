@@ -1110,12 +1110,14 @@ static PyObject *
 sys_setswitchinterval_impl(PyObject *module, double interval)
 /*[clinic end generated code: output=65a19629e5153983 input=561b477134df91d9]*/
 {
+#if 0
     if (interval <= 0.0) {
         PyErr_SetString(PyExc_ValueError,
                         "switch interval must be strictly positive");
         return NULL;
     }
     _PyEval_SetSwitchInterval((unsigned long) (1e6 * interval));
+#endif
     Py_RETURN_NONE;
 }
 
@@ -1130,7 +1132,8 @@ static double
 sys_getswitchinterval_impl(PyObject *module)
 /*[clinic end generated code: output=a38c277c85b5096d input=bdf9d39c0ebbbb6f]*/
 {
-    return 1e-6 * _PyEval_GetSwitchInterval();
+    // return 1e-6 * _PyEval_GetSwitchInterval();
+    return 1000.0;
 }
 
 /*[clinic input]

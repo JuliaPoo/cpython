@@ -2,6 +2,20 @@
 #  error "this header file must not be included directly"
 #endif
 
+#include "pythread.h"
+#include "intrusive.h"
+/* Temporarily work around cross platform (nt/posix) compilation issues.
+* Can't include mutexed.h directly on NT since it includes windows.h
+* and breaks compliation solution-wide. */
+
+#undef COND_T
+#ifdef MS_WINDOWS
+typedef void *COND_HANDLE;
+#define COND_T COND_HANDLE
+#else
+#include "mutexed.h"
+#endif
+
 
 PyAPI_FUNC(int) _PyInterpreterState_RequiresIDRef(PyInterpreterState *);
 PyAPI_FUNC(void) _PyInterpreterState_RequireIDRef(PyInterpreterState *, int);
@@ -126,6 +140,14 @@ struct _ts {
 
     PyObject *dict;  /* Stores per-thread state */
 
+    int tick_counter;
+
+    COND_T bfs_cond;
+    struct _list bfs_list;
+    long double bfs_slice;
+    long double bfs_deadline;
+    long double bfs_timestamp;
+
     int gilstate_counter;
 
     PyObject *async_exc; /* Asynchronous exception to raise */
@@ -202,6 +224,7 @@ struct _ts {
     _PyCFrame root_cframe;
 };
 
+#define THREAD_STATE(ptr) CONTAINER(PyThreadState, bfs_list, ptr)
 
 /* other API */
 

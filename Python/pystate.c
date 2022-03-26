@@ -13,6 +13,8 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_runtime_init.h"  // _PyRuntimeState_INIT
 #include "pycore_sysmodule.h"
+#include "bfs.h"
+#include "mutexed.h"
 
 /* --------------------------------------------------------------------------
 CAUTION
@@ -826,6 +828,12 @@ new_threadstate(PyInterpreterState *interp)
     }
     interp->threads.head = tstate;
 
+    COND_INIT(tstate->bfs_cond);
+    tstate->bfs_list.next = NULL;
+    tstate->bfs_list.prev = NULL;
+    tstate->bfs_slice = 0;
+    tstate->bfs_deadline = 0;
+    tstate->bfs_timestamp = 0;
     init_threadstate(tstate, interp, id, old_head);
 
     HEAD_UNLOCK(runtime);
@@ -1041,6 +1049,7 @@ PyThreadState_Clear(PyThreadState *tstate)
     if (tstate->on_delete != NULL) {
         tstate->on_delete(tstate->on_delete_data);
     }
+    bfs_clear(tstate);
 }
 
 
@@ -1635,6 +1644,7 @@ PyGILState_GetThisThreadState(void)
 int
 PyGILState_Check(void)
 {
+    return 1;
     struct _gilstate_runtime_state *gilstate = &_PyRuntime.gilstate;
     if (!gilstate->check_enabled) {
         return 1;

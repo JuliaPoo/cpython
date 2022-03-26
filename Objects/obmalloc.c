@@ -2664,11 +2664,11 @@ _PyMem_DebugRawRealloc(void *ctx, void *p, size_t nbytes)
 static inline void
 _PyMem_DebugCheckGIL(const char *func)
 {
-    if (!PyGILState_Check()) {
-        _Py_FatalErrorFunc(func,
-                           "Python memory allocator called "
-                           "without holding the GIL");
-    }
+    //if (!PyGILState_Check()) {
+    //    _Py_FatalErrorFunc(func,
+    //                       "Python memory allocator called "
+    //                       "without holding the GIL");
+    //}
 }
 
 static void *

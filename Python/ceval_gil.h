@@ -90,6 +90,7 @@
 
 #define DEFAULT_INTERVAL 5000
 
+#if 0
 static void _gil_initialize(struct _gil_runtime_state *gil)
 {
     _Py_atomic_int uninitialized = {-1};
@@ -185,7 +186,7 @@ drop_gil(struct _ceval_runtime_state *ceval, struct _ceval_state *ceval2,
     }
 #endif
 }
-
+#endif
 
 /* Check if a Python thread must exit immediately, rather than taking the GIL
    if Py_Finalize() has been called.
@@ -205,7 +206,7 @@ tstate_must_exit(PyThreadState *tstate)
     return (finalizing != NULL && finalizing != tstate);
 }
 
-
+#if 0
 /* Take the GIL.
 
    The function saves errno at entry and restores its value at exit.
@@ -325,6 +326,7 @@ _ready:
 
     errno = err;
 }
+#endif
 
 void _PyEval_SetSwitchInterval(unsigned long microseconds)
 {

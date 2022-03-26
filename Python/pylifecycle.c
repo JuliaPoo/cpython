@@ -28,6 +28,7 @@
 #include "pycore_tuple.h"         // _PyTuple_InitTypes()
 #include "pycore_typeobject.h"    // _PyTypes_InitTypes()
 #include "pycore_unicodeobject.h" // _PyUnicode_InitTypes()
+#include "bfs.h"
 
 extern void _PyIO_Fini(void);
 
@@ -603,7 +604,7 @@ pycore_init_runtime(_PyRuntimeState *runtime,
     return _PyStatus_OK();
 }
 
-
+#if 0
 static PyStatus
 init_interp_create_gil(PyThreadState *tstate)
 {
@@ -627,6 +628,7 @@ init_interp_create_gil(PyThreadState *tstate)
 
     return _PyStatus_OK();
 }
+#endif
 
 
 static PyStatus
@@ -657,10 +659,13 @@ pycore_create_interpreter(_PyRuntimeState *runtime,
     }
     (void) PyThreadState_Swap(tstate);
 
-    status = init_interp_create_gil(tstate);
-    if (_PyStatus_EXCEPTION(status)) {
-        return status;
-    }
+    //status = init_interp_create_gil(tstate);
+    //if (_PyStatus_EXCEPTION(status)) {
+    //    return status;
+    //}
+    bfs_init();
+    bfs_schedule(tstate);
+    runtime->ceval.threads_init = 1;
 
     *tstate_p = tstate;
     return _PyStatus_OK();
@@ -2000,10 +2005,10 @@ new_interpreter(PyThreadState **tstate_p, int isolated_subinterpreter)
     }
     interp->config._isolated_interpreter = isolated_subinterpreter;
 
-    status = init_interp_create_gil(tstate);
-    if (_PyStatus_EXCEPTION(status)) {
-        goto error;
-    }
+    //status = init_interp_create_gil(tstate);
+    //if (_PyStatus_EXCEPTION(status)) {
+    //    goto error;
+    //}
 
     status = pycore_interp_init(tstate);
     if (_PyStatus_EXCEPTION(status)) {

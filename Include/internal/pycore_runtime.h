@@ -24,6 +24,7 @@ struct _ceval_runtime_state {
        _Py_ThreadCanHandleSignals(). */
     _Py_atomic_int signals_pending;
 #ifndef EXPERIMENTAL_ISOLATED_SUBINTERPRETERS
+    int threads_init;
     struct _gil_runtime_state gil;
 #endif
 };
