@@ -25,6 +25,8 @@ extern "C" {
 #include "pycore_typeobject.h"    // struct type_cache
 #include "pycore_unicodeobject.h" // struct _Py_unicode_state
 #include "pycore_warnings.h"      // struct _warnings_runtime_state
+#include "pycore_specialize.h"    // struct _Py_c_cache
+
 
 struct _pending_calls {
     PyThread_type_lock lock;
@@ -175,6 +177,7 @@ struct _is {
     struct ast_state ast;
     struct type_cache type_cache;
     struct callable_cache callable_cache;
+    struct _Py_c_cache c_cache;
 
     /* The following fields are here to avoid allocation during init.
        The data is exposed through PyInterpreterState pointer fields.

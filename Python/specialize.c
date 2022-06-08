@@ -8,6 +8,7 @@
 #include "pycore_object.h"
 #include "pycore_opcode.h"        // _PyOpcode_Caches
 #include "structmember.h"         // struct PyMemberDef, T_OFFSET_EX
+#include "pycore_specialize.h"
 
 #include <stdlib.h> // rand()
 
@@ -484,15 +485,9 @@ miss_counter_start(void) {
 #define SPEC_FAIL_UNPACK_SEQUENCE_SEQUENCE 9
 
 
-static int
-specialize_module_load_attr(PyObject *owner, _Py_CODEUNIT *instr,
-                            PyObject *name, int opcode, int opcode_module)
+Py_ssize_t
+_Py_Specialize_Module_DictCheck(PyDictObject *dict, PyObject *name)
 {
-    _PyAttrCache *cache = (_PyAttrCache *)(instr + 1);
-    PyModuleObject *m = (PyModuleObject *)owner;
-    PyObject *value = NULL;
-    assert((owner->ob_type->tp_flags & Py_TPFLAGS_MANAGED_DICT) == 0);
-    PyDictObject *dict = (PyDictObject *)m->md_dict;
     if (dict == NULL) {
         SPECIALIZATION_FAIL(opcode, SPEC_FAIL_NO_DICT);
         return -1;
@@ -501,17 +496,33 @@ specialize_module_load_attr(PyObject *owner, _Py_CODEUNIT *instr,
         SPECIALIZATION_FAIL(opcode, SPEC_FAIL_ATTR_NON_STRING_OR_SPLIT);
         return -1;
     }
+    PyObject *value = NULL;
     Py_ssize_t index = _PyDict_GetItemHint(dict, &_Py_ID(__getattr__), -1,
-                                           &value);
+        &value);
     assert(index != DKIX_ERROR);
     if (index != DKIX_EMPTY) {
         SPECIALIZATION_FAIL(opcode, SPEC_FAIL_ATTR_MODULE_ATTR_NOT_FOUND);
         return -1;
     }
     index = _PyDict_GetItemHint(dict, name, -1, &value);
-    assert (index != DKIX_ERROR);
+    assert(index != DKIX_ERROR);
     if (index != (uint16_t)index) {
         SPECIALIZATION_FAIL(opcode, SPEC_FAIL_OUT_OF_RANGE);
+        return -1;
+    }
+    return index;
+}
+
+static int
+specialize_module_load_attr(PyObject *owner, _Py_CODEUNIT *instr,
+                            PyObject *name, int opcode, int opcode_module)
+{
+    _PyAttrCache *cache = (_PyAttrCache *)(instr + 1);
+    PyModuleObject *m = (PyModuleObject *)owner;
+    assert((owner->ob_type->tp_flags & Py_TPFLAGS_MANAGED_DICT) == 0);
+    PyDictObject *dict = (PyDictObject *)m->md_dict;
+    Py_ssize_t index = _Py_Specialize_Module_DictCheck(dict, name);
+    if (index < 0) {
         return -1;
     }
     uint32_t keys_version = _PyDictKeys_GetVersionForCurrentState(dict->ma_keys);
@@ -2059,3 +2070,46 @@ int
 }
 
 #endif
+
+
+/* C-API specializations */
+void
+_PyCCache_Init(PyInterpreterState *interp)
+{
+    struct _Py_c_cache *cache = &interp->c_cache;
+    memset(cache, 0, sizeof(cache));
+}
+
+#define CDEOPT_IF(cond) if (cond) { cache->counter = 0; return NULL; }
+
+PyObject *
+load_module_dict_attr(_PyCAttrCache *cache, PyDictObject *mod_dict, PyObject *name)
+{
+    Py_ssize_t index = -1;
+    uint32_t keys_version = 0;
+    if (!cache->counter) {
+        if (!PyDict_CheckExact(mod_dict)) {
+            return NULL;
+        }
+        index = _Py_Specialize_Module_DictCheck(mod_dict, name);
+        if (index < 0) {
+            return NULL;
+        }
+        keys_version = _PyDictKeys_GetVersionForCurrentState(mod_dict->ma_keys);
+        if (keys_version == 0) {
+            return NULL;
+        }
+        cache->index = (uint16_t)index;
+        cache->version = keys_version;
+        cache->counter = 1;
+    }
+    assert(mod_dict != NULL);
+    assert(PyDict_CheckExact(mod_dict));
+    assert(mod_dict->ma_keys->dk_kind == DICT_KEYS_UNICODE);
+    assert(cache->index < mod_dict->ma_keys->dk_nentries);
+    CDEOPT_IF(mod_dict->ma_keys->dk_version != cache->version);
+    PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(mod_dict->ma_keys) + cache->index;
+    PyObject *res = ep->me_value;
+    CDEOPT_IF(res == NULL);
+    return res;
+}

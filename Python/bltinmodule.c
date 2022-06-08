@@ -10,6 +10,7 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
+#include "pycore_specialize.h"    // CACHE_LOAD_MODULE_DICT_ATTR
 
 #include "clinic/bltinmodule.c.h"
 
@@ -1992,7 +1993,8 @@ builtin_print_impl(PyObject *module, PyObject *args, PyObject *sep,
 
     if (file == Py_None) {
         PyThreadState *tstate = _PyThreadState_GET();
-        file = _PySys_GetAttr(tstate, &_Py_ID(stdout));
+        CACHE_LOAD_MODULE_DICT_ATTR(file, tstate->interp, tstate->interp->sysdict, &_Py_ID(stdout), bltinmodule_sys_stdout);
+        file = file ? file : _PySys_GetAttr(tstate, &_Py_ID(stdout));
         if (file == NULL) {
             PyErr_SetString(PyExc_RuntimeError, "lost sys.stdout");
             return NULL;

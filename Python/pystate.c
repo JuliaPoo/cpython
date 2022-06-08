@@ -294,6 +294,7 @@ init_interpreter(PyInterpreterState *interp,
     _PyGC_InitState(&interp->gc);
     PyConfig_InitPythonConfig(&interp->config);
     _PyType_InitCache(interp);
+    _PyCCache_Init(interp);
 
     interp->_initialized = 1;
 }
