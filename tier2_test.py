@@ -198,10 +198,6 @@ insts = dis.get_instructions(test_guard_elimination, tier2=True)
 for x,y in zip(insts, expected):
     assert x.opname == y
 
-# We only wanna test the stability of the first type guards
-# later on
-first_guard_test_until = insts[-1].offset
-
 # Trigger generation of other branch
 test_guard_elimination(0.1, 0.1)
 insts = dis.get_instructions(test_guard_elimination, tier2=True)
@@ -266,8 +262,6 @@ insts = dis.get_instructions(test_guard_elimination, tier2=True)
 
 # Make sure the first type guard is stable
 for x,y in zip(insts, expected):
-    if x.offset >= first_guard_test_until:
-        break
     assert x.opname == y.opname
 
 
